@@ -24,6 +24,9 @@ function setup() {
 
     eyes.push(new Eye(width / 2, height / 2))
     nextSpawn = millis() + random(...SPAWN_WAIT)
+
+    /* -------- handle device rotate / resize -------- */
+    window.addEventListener("orientationchange", resetSketch)
 }
 
 function draw() {
@@ -82,5 +85,30 @@ function touchEnded() {
 }
 
 function windowResized() {
+    resetSketch()
+}
+
+/* ---------- resize / rotate helper ---------- */
+function resetSketch() {
     resizeCanvas(windowWidth, windowHeight)
+
+    /* keep BG_COLOR and existing eyes; translate everything so the
+       first eye stays centred, and move pupils immediately */
+    if (eyes.length) {
+        const dx = width / 2 - eyes[0].cx
+        const dy = height / 2 - eyes[0].cy
+        for (const e of eyes) {
+            e.cx += dx
+            e.cy += dy
+            e.pX += dx          // keep pupil aligned
+            e.pY += dy
+            if (e.idleTarget) { // maintain idle target offset
+                e.idleTarget.x += dx
+                e.idleTarget.y += dy
+            }
+        }
+    }
+
+    spawningOff = false
+    nextSpawn = millis() + random(...SPAWN_WAIT)
 }
