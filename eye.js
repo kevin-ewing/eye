@@ -1,10 +1,8 @@
-const EYE_MOMENTUM = 0.2
-
 // 20 px wider than the eye and ±100 px vertical buffer
-const H_MARGIN = 20
-const V_MARGIN = 100
+const H_MARGIN = 18
+const V_MARGIN = 120
 
-const BLINK_BUFFER = 600;          // ms away from any blink
+const BLINK_BUFFER = 600 // ms away from any blink
 
 // pupil parameters
 const PUPIL_MIN = 20
@@ -70,26 +68,29 @@ const EYE_COLORS = [
 /* ---------- Eye class ---------- */
 class Eye {
     constructor(cx, cy, scl = 1) {
-        this.cx = cx;
-        this.cy = cy;
-        this.scale = scl;
-        this.reset();
+        this.cx = cx
+        this.cy = cy
+        this.scale = scl
+        this.reset()
 
-        this.pX = this.cx;
-        this.pY = this.cy;
+        this.pX = this.cx
+        this.pY = this.cy
 
-        this.lastMouseX = mouseX;
-        this.lastMouseY = mouseY;
-        this.lastMoveTime = millis();
+        /* ---------- mouse-init ---------- */
+        this.lastMouseX = mouseX
+        this.lastMouseY = mouseY
+        this.hasInitMouse = false
+        this.lastMoveTime = 0
 
-        this.idleTarget = null;
-        this.nextIdleTargetTime = 0;
+        /* ---------- idle ---------- */
+        this.idleTarget = { x: this.cx, y: this.cy }
+        this.nextIdleTargetTime = 0
 
-        this.jitterOffset = { x: 0, y: 0 };
-        this.nextJitterTime = 0;
+        this.jitterOffset = { x: 0, y: 0 }
+        this.nextJitterTime = 0
 
-        this.idleDelay = random(2500, 4000);
-
+        this.idleDelay = random(2500, 4000)
+        this.eyeMomentum = random(0.15, 0.25)
     }
 
     reset() {
@@ -98,7 +99,7 @@ class Eye {
         this.nextDelay = random(2000, 6000)
 
         this.irisColor = color(random(EYE_COLORS))
-        this.eyeLidStrokeWeight = random(15, 50)
+        this.eyeLidStrokeWeight = random(15, 45)
         this.eyeLidMaskWidthOffset = min(
             random(5, 30),
             this.eyeLidStrokeWeight - 5
@@ -118,74 +119,87 @@ class Eye {
 
     /* ---- per-frame update ---- */
     draw() {
-        push();
-        translate(this.cx, this.cy);
-        scale(this.scale);
-        translate(-this.cx, -this.cy);
+        push()
+        translate(this.cx, this.cy)
+        scale(this.scale)
+        translate(-this.cx, -this.cy)
 
-        const open = this.calculateOpenness();
-        this.drawPupil(open);
-        this.drawLids(open);
+        const open = this.calculateOpenness()
+        this.drawEye(open)
 
-        pop();
+        pop()
     }
 
     /* ---- blinking ---- */
     calculateOpenness(blinkSpeed = 0.1) {
-        const now = millis();
+        const now = millis()
+
+        /* ---------- ensure idle start ---------- */
+        if (this.blinkProg === undefined) this.blinkProg = 0
+        if (this.lastBlink === undefined) this.lastBlink = now
+        if (this.nextDelay === undefined) this.nextDelay = random(2000, 6000)
+
+        /* ---------- first idle target straight ahead ---------- */
+        if (this.idleTarget === undefined)
+            this.idleTarget = createVector(width / 2, height / 2)
+
         /* ---------- normal blink ---------- */
-        let o = 1;
+        let o = 1
         if (this.blinkProg > 0) {
-            this.blinkProg += blinkSpeed;
-            o = this.blinkProg < 0.5
-                ? map(this.blinkProg, 0, 0.5, 1, 0)
-                : map(this.blinkProg, 0.5, 1, 0, 1);
-            if (this.blinkProg >= 1) this.blinkProg = 0;
+            this.blinkProg += blinkSpeed
+            o =
+                this.blinkProg < 0.5
+                    ? map(this.blinkProg, 0, 0.5, 1, 0)
+                    : map(this.blinkProg, 0.5, 1, 0, 1)
+            if (this.blinkProg >= 1) this.blinkProg = 0
         } else if (now - this.lastBlink > this.nextDelay) {
-            this.blinkProg = 0.01;
-            this.lastBlink = now;
-            this.nextDelay = random(2000, 6000);
+            this.blinkProg = 0.01
+            this.lastBlink = now
+            this.nextDelay = random(2000, 6000)
         }
 
         /* ---------- scheduled squint ---------- */
         if (this.nextSquint === undefined)
-            this.nextSquint = now + random(10000, 50000);
+            this.nextSquint = now + random(10000, 50000)
 
-        // allow a squint only if far enough from last/next blink
-        const nextBlinkTime = this.lastBlink + this.nextDelay;
-        const blinkSafe = (now - this.lastBlink > BLINK_BUFFER) &&
-            (nextBlinkTime - now > BLINK_BUFFER);
+        const nextBlinkTime = this.lastBlink + this.nextDelay
+        const blinkSafe =
+            now - this.lastBlink > BLINK_BUFFER &&
+            nextBlinkTime - now > BLINK_BUFFER
 
         if (!this.inSquint && blinkSafe && now >= this.nextSquint) {
-            this.inSquint = true;
-            this.squintStart = now;
-            this.closeDur = 90;
-            this.holdDur = random(1000, 4000);
-            this.openDur = 80;
-            this.squintTotal = this.closeDur + this.holdDur + this.openDur;
+            this.inSquint = true
+            this.squintStart = now
+            this.closeDur = 90
+            this.holdDur = random(1000, 4000)
+            this.openDur = 80
+            this.squintTotal = this.closeDur + this.holdDur + this.openDur
         }
 
         /* openness from squint */
-        let s = 1;
+        let s = 1
         if (this.inSquint) {
-            const t = now - this.squintStart;
-            if (t < this.closeDur) {                       // closing
-                s = 1 - 0.2 * (t / this.closeDur);         // 1 → 0.8
-            } else if (t < this.closeDur + this.holdDur) { // hold
-                s = 0.8;
-            } else if (t < this.squintTotal) {             // opening
-                const p = (t - this.closeDur - this.holdDur) / this.openDur;
-                s = 0.8 + 0.2 * p;                         // 0.8 → 1
-            } else {                                       // done
-                this.inSquint = false;
-                this.nextSquint = now + random(5000, 10000);
-                s = 1;
+            const t = now - this.squintStart
+            if (t < this.closeDur) {
+                // closing
+                s = 1 - 0.2 * (t / this.closeDur) // 1 → 0.8
+            } else if (t < this.closeDur + this.holdDur) {
+                // hold
+                s = 0.8
+            } else if (t < this.squintTotal) {
+                // opening
+                const p = (t - this.closeDur - this.holdDur) / this.openDur
+                s = 0.8 + 0.2 * p // 0.8 → 1
+            } else {
+                // done
+                this.inSquint = false
+                this.nextSquint = now + random(5000, 10000)
+                s = 1
             }
         }
 
-        return min(o, s);  // use smaller of blink or squint openness
+        return min(o, s) // use smaller of blink or squint openness
     }
-
 
     /* ---- pupil dynamics ---- */
     updatePupilDiameter(speed, stimulus) {
@@ -214,69 +228,86 @@ class Eye {
     }
 
     pupilTarget() {
-        const rx = 80, ry = 65, sens = 0.7, now = millis();
-        let stimulus = false;
+        const rx = 80,
+            ry = 65,
+            sens = 0.7,
+            now = millis()
+        let stimulus = false
 
-        /* 1 ▸ detect mouse movement */
-        if (dist(mouseX, mouseY, this.lastMouseX, this.lastMouseY) > 3) {
-            this.lastMouseX = mouseX;
-            this.lastMouseY = mouseY;
-            this.lastMoveTime = now;
-            this.idleTarget = null;
-            this.idleDelay = random(2500, 4000);      // reset random delay
-            stimulus = true;
+        /* 1 ▸ detect mouse movement --------------------------------------- */
+        if (!this.hasInitMouse) {
+            // ➌ first frame:
+            this.lastMouseX = mouseX //    take a snapshot
+            this.lastMouseY = mouseY
+            this.hasInitMouse = true
+        } else if (
+            // thereafter:
+            dist(mouseX, mouseY, this.lastMouseX, this.lastMouseY) > 3
+        ) {
+            this.lastMouseX = mouseX
+            this.lastMouseY = mouseY
+            this.lastMoveTime = now
+            this.idleTarget = null
+            this.idleDelay = random(2500, 4000) // reset random delay
+            stimulus = true
         }
 
-        /* 2 ▸ idle roaming */
+        /* 2 ▸ idle roaming ----------------------------------------------- */
         if (now - this.lastMoveTime > this.idleDelay) {
             if (!this.idleTarget || now > this.nextIdleTargetTime) {
-                const a = random(TWO_PI), r = pow(random(), 2) * 0.8;
+                const a = random(TWO_PI),
+                    r = pow(random(), 2) * 0.8
                 this.idleTarget = {
                     x: this.cx + cos(a) * rx * r,
                     y: this.cy + sin(a) * ry * r * 0.3,
-                };
-                this.nextIdleTargetTime = now + random(800, 1800);
-                stimulus = true;
+                }
+                this.nextIdleTargetTime = now + random(800, 1800)
+                stimulus = true
             }
         }
 
-        /* 3 ▸ choose target */
-        let dx = 0, dy = 0;
+        /* 3 ▸ choose target ---------------------------------------------- */
+        let dx = 0,
+            dy = 0
         if (this.idleTarget) {
-            dx = this.idleTarget.x - this.cx;
-            dy = this.idleTarget.y - this.cy;
+            dx = this.idleTarget.x - this.cx
+            dy = this.idleTarget.y - this.cy
         } else if (this.lastMoveTime > 0) {
-            let nx = ((mouseX - this.cx) / (width / 2)) * sens;
-            let ny = ((mouseY - this.cy) / (height / 2)) * sens;
-            dx = nx * rx; dy = ny * ry;
+            let nx = ((mouseX - this.cx) / (width / 2)) * sens
+            let ny = ((mouseY - this.cy) / (height / 2)) * sens
+            dx = nx * rx
+            dy = ny * ry
 
             /* micro-jitter */
             if (now > this.nextJitterTime) {
-                const a = random(TWO_PI), r = pow(random(), 2) * 0.2;
-                this.jitterOffset.x = cos(a) * rx * r;
-                this.jitterOffset.y = sin(a) * ry * r;
-                this.nextJitterTime = now + random(1000, 3000);
-                stimulus = true;
+                const a = random(TWO_PI),
+                    r = pow(random(), 2) * 0.2
+                this.jitterOffset.x = cos(a) * rx * r
+                this.jitterOffset.y = sin(a) * ry * r
+                this.nextJitterTime = now + random(1000, 3000)
+                stimulus = true
             }
-            dx += this.jitterOffset.x;
-            dy += this.jitterOffset.y;
+            dx += this.jitterOffset.x
+            dy += this.jitterOffset.y
 
             /* keep inside ellipse */
-            const t2 = (dx * dx) / (rx * rx) + (dy * dy) / (ry * ry);
-            if (t2 > 1) { const k = 1 / Math.sqrt(t2); dx *= k; dy *= k; }
+            const t2 = (dx * dx) / (rx * rx) + (dy * dy) / (ry * ry)
+            if (t2 > 1) {
+                const k = 1 / Math.sqrt(t2)
+                dx *= k
+                dy *= k
+            }
         }
 
-        return { x: this.cx + dx, y: this.cy + dy, stimulus };
+        return { x: this.cx + dx, y: this.cy + dy, stimulus }
     }
 
-
-
-    drawPupil(open) {
+    drawPupil() {
         const { x: tx, y: ty, stimulus } = this.pupilTarget()
         const prevX = this.pX,
             prevY = this.pY
-        this.pX += (tx - this.pX) * EYE_MOMENTUM
-        this.pY += (ty - this.pY) * EYE_MOMENTUM
+        this.pX += (tx - this.pX) * this.eyeMomentum
+        this.pY += (ty - this.pY) * this.eyeMomentum
 
         const speed = dist(prevX, prevY, this.pX, this.pY)
         const d = this.updatePupilDiameter(speed, stimulus)
@@ -289,7 +320,7 @@ class Eye {
     }
 
     /* ---- lids & lashes ---- */
-    drawLids(open) {
+    drawEye(open) {
         const cx = this.cx,
             cy = this.cy
         const upPadX = this.eyeLidMaskWidthOffset,
@@ -313,6 +344,17 @@ class Eye {
         push()
         strokeCap(SQUARE)
 
+        /* FULL EYE WHITES */
+        noStroke()
+        fill(EYE_WHITE_COLOR)
+        beginShape()
+        vertex(upStartX, cy)
+        quadraticVertex(cx, cy - upArcH, upEndX, cy)
+        quadraticVertex(cx, cy - lowArcH, lowStartX, cy)
+        endShape(CLOSE)
+
+        this.drawPupil(open)
+
         /* upper & lower lid strokes */
         noFill()
         stroke(0)
@@ -332,8 +374,8 @@ class Eye {
         pop()
 
         /* white masks */
-        noStroke();
-        fill(255);
+        noStroke()
+        fill(BG_COLOR) // was BG_COLOR
 
         /* upper mask */
         beginShape()
@@ -362,7 +404,7 @@ class Eye {
             (this.eyeLidStrokeWeight +
                 this.eyeLidMaskWidthOffset +
                 this.eyeLidMaskHeightOffset) /
-            4
+                4
         )
         strokeCap(
             this.eyeLidStrokeWeight - this.eyeLidMaskWidthOffset < 10
@@ -397,9 +439,9 @@ class Eye {
 
     // add inside the Eye class
     isInside(px, py) {
-        const dx = px - this.cx;
-        const dy = py - this.cy;
-        const r = 120 * this.scale;               // 120 is the original radius
-        return (dx * dx) / (r * r) + (dy * dy) / (r * r) <= 1;
+        const dx = px - this.cx
+        const dy = py - this.cy
+        const r = 120 * this.scale
+        return (dx * dx) / (r * r) + (dy * dy) / (r * r) <= 1
     }
 }
